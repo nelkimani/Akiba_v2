@@ -25,7 +25,9 @@ const cmpE=(a,b)=>(a.d+(a.t||'')).localeCompare(b.d+(b.t||''))||a.id-b.id;
 
 /* ---------------- ledger ---------------- */
 const paidIn=(mid,w,extra)=>{let s=0;S.contribs.forEach(c=>{if(c.mid==mid&&c.wk==w)s+=c.amt});(extra||[]).forEach(c=>{if(c.mid==mid&&c.wk==w)s+=c.amt});return s};
-function recompute(){S.m.forEach(m=>{m.paid=Math.min(WEEKLY,paidIn(m.id,WEEK))})}
+/* Per week: KSh16,500 leaves the bank as a standing order to the Transnational SACCO ordinary shares account, KSh5,500 is the Loan Kitty (started this year).
+   Expected ordinary shares = (52 weeks last year + completed weeks this year) x 16,500. */
+function recompute(){ORD=(52+WEEK-1)*16500;KIT=(WEEK-1)*5500;S.m.forEach(m=>{m.paid=Math.min(WEEKLY,paidIn(m.id,WEEK))})}
 // oldest unpaid week first (arrears), never earlier than the first tracked week
 function firstOpen(mid,d,extra){const cap=wkOf(d),w0=S.w0||41;for(let w=w0;w<=cap;w++)if(paidIn(mid,w,extra)<WEEKLY)return w;return Math.max(cap,w0)}
 // split a payment over weeks: fill the target week to KSh2,000, spill the rest into the following weeks
@@ -74,6 +76,15 @@ function migrate(){
       const base=S.contribs.find(y=>y.mid==x.mid&&y.wk==x.wk-1&&y.src=='Earlier record'&&y.d==x.d);if(!base)return true;
       S.fines.unshift({n:mname(x.mid),why:'Late contribution, week '+base.wk+' (paid after Sunday midnight)',a:x.amt,st:'Paid',d:x.d});return false});
     S.v=3}
+  if((S.v||0)<4){ // loans as listed by the Treasurer on 7 Oct 2026: first interest (incl. KSh200 fee) already paid on these
+    const P={'Hesbon Ogera':[50000,'2026-10-01',2500],'Mary Njogu':[20000,'2026-10-03',1000],'Francis Githui':[30000,'2026-09-24',1500],'Mercy Murugi':[50000,'2026-10-04',2500],'Achola Silas':[50000,'2026-10-04',2500],'Nelson Karanja':[50000,'2026-10-07',2500]};
+    S.loans.forEach(l=>{const x=P[l.who];if(x&&l.ok&&l.p==x[0]&&!l.h.length){l.h.push({d:x[1],f:200,i:x[2],pr:0});l.feePaid=200}
+      if(l.who=='Ashford Kariuki'&&l.ok&&l.p==30000&&!l.h.length)l.feePaid=0});
+    S.v=4}
+  if((S.v||0)<5){ // AGM was 2 June 2026; net dividends KSh46,164 arrived 31 Jan 2026. Both are already inside the real bank balance, so they are history only.
+    const a=S.bank.find(b=>b.cat=='Expense'&&/AGM/i.test(b.t));if(a)a.d='2026-06-02';
+    if(!S.bank.some(b=>b.cat=='Dividend'))S.bank.push({d:'2026-01-31',t:'Bank dividends (net)',cat:'Dividend',amt:46164,rec:true});
+    S.v=5}
   S.cw=S.cw||41;WEEK=S.cw;recompute();save()}
 
 /* ---------------- WhatsApp + files ---------------- */
@@ -157,16 +168,17 @@ function weekData(w){
 const refsOf=es=>es.map(e=>e.ref).filter(Boolean).filter((x,i,a)=>a.indexOf(x)==i).join(', ');
 function contribView(){
   const w=VW==null?WEEK:VW,d=weekData(w),pc=Math.round(Math.min(d.col,d.exp)/d.exp*100),cur=w==WEEK;
-  return`<div class="cd"><div class="k">Completed weeks</div><div class="v">${39+WEEK-41} / ${39+WEEK-41}</div><p class="mut">Expected per week ${KSh(22000)} (Ordinary ${KSh(16500)} + Loan Kitty ${KSh(5500)})</p></div>
+  return`<div class="cd"><div class="k">Completed weeks</div><div class="v">${WEEK-1} of ${WEEK}</div><p class="mut">Week ${WEEK} is the current collection week and counts as complete once you close it. Expected per week ${KSh(22000)} (SACCO standing order ${KSh(16500)} + Loan Kitty ${KSh(5500)})</p></div>
 <div class="qa np"><button class="btn s o" onclick="vwk(-1)" ${w<=41?'disabled':''}>‹ Earlier</button><b style="align-self:center;white-space:nowrap">Week ${w}${cur?' (current)':''} · ${wkRange(w)}</b><button class="btn s o" onclick="vwk(1)">Later ›</button></div>
 <div class="cd"><h3>Week ${w} collection</h3><div class="pb" role="progressbar" aria-valuenow="${pc}"><i style="width:${pc}%"></i></div><p class="mut">${pc}% collected: ${KSh(d.col)} of ${KSh(d.exp)}. Outstanding ${KSh(Math.max(0,d.exp-d.col))}. ${d.npaid} of ${S.m.length} members fully paid.</p></div>
 ${quick(['contrib','import'])}<div class="qa np">${can('report')?`<button class="btn s o" onclick="RV.wk=${w};go('Report/Weekly summary')">Weekly summary and PDF</button>`:''}${can('contrib')&&cur?`<button class="btn s o" onclick="closeWeek()">Close week ${w}, start week ${w+1}</button>`:''}</div>
 <div class="cd"><h3>Week ${w}, ${wkRange(w)}</h3>${d.rows.map(r=>`<div class="row" onclick="go('Member/${r.m.id}')"><div class="av">${ini(r.m.n)}</div><div class="grow"><b>${H(r.m.n)}</b><span class="mut">${r.es.length?r.es.map(e=>KSh(e.amt)+' · '+when(e)+(e.ref?' · '+H(e.ref):'')).join('<br>'):'Outstanding '+KSh(WEEKLY)}</span></div>${bd(r.st)}</div>`).join('')}</div>
-<div class="cd"><div class="k">2026 to date</div><p>Ordinary ${KSh(643500)} + Loan Kitty ${KSh(214500)} = <b>${KSh(858000)}</b></p></div>`}
+<div class="cd"><div class="k">2026 to date</div><p>${WEEK-1} completed weeks: SACCO standing order ${KSh((WEEK-1)*16500)} + Loan Kitty ${KSh((WEEK-1)*5500)} = <b>${KSh((WEEK-1)*22000)}</b></p></div>`}
 function closeWeek(){
   if(!can('contrib'))return toast('Only the Treasurer can close a week');
   const d=weekData(WEEK),un=d.rows.filter(r=>r.st!='Paid');
-  if(!confirm('Close week '+WEEK+' and start week '+(WEEK+1)+'?'+(un.length?'\n\n'+un.length+' member(s) have not fully paid. Their balance stays outstanding for week '+WEEK+' and the next payment they make is credited to it first.':'')))return;
+  if(!confirm('Close week '+WEEK+' and start week '+(WEEK+1)+'? The KSh16,500 SACCO standing order for this week will be recorded as money out.'+(un.length?'\n\n'+un.length+' member(s) have not fully paid. Their balance stays outstanding for week '+WEEK+' and the next payment they make is credited to it first.':'')))return;
+  S.bank.unshift({d:today(),t:'SACCO standing order, week '+WEEK+' (Transnational SACCO ordinary shares)',cat:'SACCO standing order',amt:-16500,rec:false});S.bal-=16500;
   S.cw=WEEK+1;WEEK=S.cw;VW=null;recompute();log('Treasurer closed contribution week',String(WEEK-1),'Week '+(WEEK-1),'Week '+WEEK);save();render(1);toast('Week '+WEEK+' started')}
 
 /* ---------------- loan approval: members vote on WhatsApp, officers approve here ---------------- */
@@ -207,10 +219,10 @@ function fDisburse(id){
   const l=S.loans.find(x=>x.id==id);
   if(!can('disburse'))return toast('Only the Treasurer disburses approved loans');
   if(l.stage!='ready')return toast('All three officers must approve first');
-  prev({title:'Disburse approved loan',rows:[['Borrower',l.who],['Principal',KSh(l.p)],['Processing fee',KSh(S.cfg.fee)],['Members approved',vcount(l).a+' of '+vcount(l).n],['Officers approved','Chairman, Treasurer, Secretary']],
-    eff:[['Bank',S.bal,S.bal-l.p+S.cfg.fee],['Loan book',book(),book()+l.p]],
-    ok(){l.ok=true;l.stage='live';l.feePaid=S.cfg.fee;l.date=today();S.bal+=S.cfg.fee-l.p;
-      S.bank.unshift({d:today(),t:'Loan disbursed: '+l.who,cat:'Loan disbursement',amt:S.cfg.fee-l.p,rec:false});log('Treasurer disbursed loan',l.who,'Ready to disburse','Active')},
+  prev({title:'Disburse approved loan',rows:[['Borrower',l.who],['Principal',KSh(l.p)],['Processing fee',KSh(S.cfg.fee)+', collected with the first interest payment'],['Members approved',vcount(l).a+' of '+vcount(l).n],['Officers approved','Chairman, Treasurer, Secretary']],
+    eff:[['Bank',S.bal,S.bal-l.p],['Loan book',book(),book()+l.p]],
+    ok(){l.ok=true;l.stage='live';l.feePaid=0;l.date=today();S.bal-=l.p;
+      S.bank.unshift({d:today(),t:'Loan disbursed: '+l.who,cat:'Loan disbursement',amt:-l.p,rec:false});log('Treasurer disbursed loan',l.who,'Ready to disburse','Active')},
     rc:null,msg:'Loan disbursed'})}
 function loanText(l,remind){
   const c=vcount(l),w=voters(l).filter(m=>!(l.votes[m.id]||{}).v).map(m=>first(m.n));
@@ -282,6 +294,7 @@ function approvals(){
     return`<div class="row" onclick="go('Loan/${l.id}')"><div class="av">${ini(l.who)}</div><div class="grow"><b>${H(l.who)} · ${KSh(l.p)}</b><span class="mut">${sub}</span></div><div class="r2">${bd(LI(l).st)}${need?'<div><span class="bd a">Your turn</span></div>':''}</div></div>`}).join('')||empty('No loans waiting','New applications appear here. Members vote on WhatsApp, then the three officers approve.')}</div>`}
 function loanAttn(){
   const a=[];
+  S.loans.filter(l=>l.ok&&LI(l).pr>0&&overdueN(l)>0).forEach(l=>a.push(['r',l.who+': '+overdueN(l)+' interest payment'+(overdueN(l)>1?'s':'')+' overdue','Loan/'+l.id]));
   pend().forEach(l=>{const c=vcount(l);
     if(l.stage=='vote'&&can('vote'))a.push([c.r?'r':'a',l.who+': '+c.a+' of '+c.n+' members approved'+(c.r?', '+c.r+' rejected':''),'Loan/'+l.id]);
     else if(l.stage=='off'&&can('sign')&&!l.sig[R])a.push(['a','Your approval needed: '+l.who+' '+KSh(l.p),'Loan/'+l.id]);
@@ -333,6 +346,44 @@ function closeMeeting(id){
   fines.forEach(m=>{const a=x.att[m.id]=='L'?lateM():absM();S.fines.unshift({n:m.n,why:(x.att[m.id]=='L'?'Late to meeting':'Absent without apology, meeting')+' '+fdate(x.d,1),a,st:'Outstanding',d:x.d});m.fines+=a;log('Secretary recorded meeting fine',m.n,'—',KSh(a))});
   x.done=true;log('Secretary closed meeting',x.title+' '+x.d,'Open','Closed');save();render(1);toast('Meeting closed')}
 function meetAttn(){ensureMeetings();return S.meetings.filter(x=>!x.done&&x.d<=today()).map(x=>['a',x.title+' ('+fdate(x.d)+'): attendance not closed','Meeting/'+x.id])}
+
+/* ---------------- loan schedule, overdue interest, group reminder ---------------- */
+// first interest payment also carries the KSh200 processing fee (e.g. 1,500 + 200 = 1,700)
+function instRows(l){
+  const mi=l.p*S.cfg.rate/100,fee=S.cfg.fee,paid=(l.feePaid||0)+l.h.reduce((s,h)=>s+h.i,0),pp=l.h.reduce((s,h)=>s+h.pr,0);let cum=0;const rows=[];
+  for(let k=1;k<=S.cfg.maxm;k++){const amt=mi+(k==1?fee:0);cum+=amt;rows.push({k,due:isoD(addM(l.date,k)),amt,paid:paid>=cum-.005})}
+  return{rows,pr:{due:isoD(addM(l.date,S.cfg.maxm)),amt:l.p,paid:pp>=l.p}}}
+const overdueN=l=>instRows(l).rows.filter(r=>!r.paid&&r.due<today()).length;
+function schedHtml(l){const s=instRows(l);
+  return s.rows.map(r=>`<div>${fdate(r.due,1)}<br><span class="mut">Interest ${KSh(r.amt-(r.k==1?S.cfg.fee:0))}${r.k==1?' + fee '+KSh(S.cfg.fee):''}${r.paid?' · paid ✓':r.due<today()?' · overdue':''}</span></div>`).join('')+`<div>${fdate(s.pr.due,1)}<br><span class="mut">Principal ${KSh(s.pr.amt)}${s.pr.paid?' · paid ✓':''}</span></div>`}
+function loanReminderText(){
+  const ls=S.loans.filter(l=>l.ok&&LI(l).pr>0),d=x=>x.slice(8,10)+'/'+x.slice(5,7)+'/'+x.slice(0,4),n=v=>Number(v).toLocaleString('en-KE');
+  return'*REMINDER TO AKIBA NJENGA*\n_Outstanding loans as at '+d(today())+'_\n\n'+ls.map(l=>{const s=instRows(l);
+    return'Name: '+l.who+'\nAmount issued: '+n(l.p)+'\nIssued on: '+d(l.date)+'\nINTEREST REPAYMENT DATES\n'+s.rows.map(r=>d(r.due)+' '+n(r.amt)+(r.paid?' ✅':r.due<today()?' ⚠️ overdue':'')).join('\n')+'\nPRINCIPAL REPAYMENT DATE\n'+d(s.pr.due)+' '+n(s.pr.amt)+(s.pr.paid?' ✅':'')}).join('\n\n')+'\n\nPlease pay on or before the due date. Thank you. - '+who()}
+
+/* ---------------- cash check: what should be in the bank this year ---------------- */
+function cashCheck(){
+  const yr=String(today().slice(0,4)),Y=d=>d&&d.slice(0,4)==yr,cw=WEEK-1,sum=(a,f)=>a.reduce((s,x)=>s+f(x),0);
+  const L=[];const add=(k,v,note)=>L.push({k,v,note});
+  add('Weekly contributions, '+cw+' completed weeks',cw*22000,'11 members x KSh2,000, assuming all paid');
+  const cur=sum(S.contribs.filter(x=>x.wk>=WEEK),x=>x.amt);add('Week '+WEEK+' contributions received so far',cur,'from the payment ledger');
+  add('SACCO standing orders, '+cw+' weeks',-cw*16500,'KSh16,500 a week to Transnational SACCO');
+  add('Bank dividends (net), 31 Jan',sum(S.bank.filter(b=>b.cat=='Dividend'&&Y(b.d)),b=>b.amt),'');
+  add('Expenses, incl. AGM 2 Jun',sum(S.bank.filter(b=>b.cat=='Expense'&&Y(b.d)),b=>b.amt),'');
+  const lo=S.loans.filter(l=>l.ok&&Y(l.date));add('Loans given out in '+yr+' ('+lo.length+')',-sum(lo,l=>l.p),'');
+  const hs=[];S.loans.forEach(l=>l.h.forEach(h=>{if(Y(h.d))hs.push(h)}));
+  add('Loan principal repaid',sum(hs,h=>h.pr),'');add('Loan interest and fees received',sum(hs,h=>h.i+h.f),'first payment includes the KSh200 fee');
+  add('Fines paid',sum(S.fines.filter(f=>f.st=='Paid'&&Y(f.d)),f=>f.a),'late contribution and meeting fines');
+  const net=sum(L,x=>x.v),open=S.cfg.open==null?null:+S.cfg.open;
+  return{L,net,open,implied:S.bal-net,expected:open==null?null:open+net,bal:S.bal,loans:book(),cw}}
+function cashCheckView(){
+  const d=cashCheck(),dif=d.expected==null?null:d.bal-d.expected;
+  return`<div class="cd hero"><div class="k">Bank balance in the app</div><div class="v">${KSh(d.bal)}</div><div class="k">Outstanding loans ${KSh(d.loans)} · Cash plus loans ${KSh(d.bal+d.loans)}</div></div>
+<div class="cd"><h3>Money in and out this year</h3>${d.L.map(x=>`<div class="ef" style="gap:.5rem"><span>${H(x.k)}${x.note?'<br><span class="mut">'+H(x.note)+'</span>':''}</span><b style="color:${x.v<0?'var(--rd)':'inherit'};white-space:nowrap">${x.v<0?'−':''}${KSh(Math.abs(x.v))}</b></div>`).join('')}<div class="ef"><b>Net movement this year</b><b>${d.net<0?'−':''}${KSh(Math.abs(d.net))}</b></div></div>
+<div class="cd"><h3>What should be in the account</h3><label for="opn">Bank balance on 1 January ${today().slice(0,4)} (from your statement)</label><input id="opn" type="number" inputmode="decimal" value="${d.open==null?'':d.open}" placeholder="Enter the opening balance">${can('bank')?'<p style="margin-top:.6rem"><button class="btn s" onclick="setOpen()">Save opening balance</button></p>':''}
+${d.expected==null?`<p class="mut" style="margin-top:.8rem">With this year's movement of ${d.net<0?'−':''}${KSh(Math.abs(d.net))}, the balance in the app is only right if the account held <b>${KSh(d.implied)}</b> on 1 January. Enter the real opening balance to check.</p>`:`<div class="ef" style="margin-top:.8rem"><span>Expected in the account</span><b>${KSh(d.expected)}</b></div><div class="ef"><span>Balance in the app</span><b>${KSh(d.bal)}</b></div><div class="ef"><b>Difference</b><b style="color:${Math.abs(dif)<1?'var(--g)':'var(--rd)'}">${dif<0?'−':''}${KSh(Math.abs(dif))}</b></div><p class="mut" style="margin-top:.5rem">${Math.abs(dif)<1?'The app agrees with what the account should hold.':dif<0?'The app shows less than expected. Check for a missing deposit or an unrecorded refund.':'The app shows more than expected. Check for a missing withdrawal or a payment recorded twice.'}</p>`}
+<p class="mut" style="margin-top:.6rem">The Loan Kitty (${KSh(KIT)}) is part of this cash and the loans, not extra money. The SACCO shares (${KSh(ORD)}) are held at the SACCO, not in this account.</p></div>`}
+function setOpen(){const v=$('opn').value;if(v==='')S.cfg.open=null;else S.cfg.open=+v;log('Treasurer set opening bank balance','1 Jan','—',v===''?'cleared':KSh(+v));save();render(1);toast('Saved')}
 
 /* ---------------- phone numbers ---------------- */
 function fPhone(id){
@@ -481,7 +532,7 @@ function rptPdf(kind,arg,mode){
   const blob=b.doc.blob();log('Generated report PDF',b.name,'—',mode=='share'?'Shared':'Downloaded');
   if(mode=='dl'){dl(blob,b.name);toast('PDF saved')}else sharePdf(blob,b.name,b.text,b.phone)}
 
-Object.assign(window,{meetingsView,meetingPage,fSpecial,saveSpecial,setAtt,closeMeeting,meetText,ensureMeetings,meetAttn,planPay,applyPay,lateDays,migrate,recompute,postContrib,allocWeeks,paidIn,wkOf,wkRange,fdate,normPhone,waOpen,dl,sharePdf,
+Object.assign(window,{cashCheck,cashCheckView,setOpen,instRows,overdueN,schedHtml,loanReminderText,meetingsView,meetingPage,fSpecial,saveSpecial,setAtt,closeMeeting,meetText,ensureMeetings,meetAttn,planPay,applyPay,lateDays,migrate,recompute,postContrib,allocWeeks,paidIn,wkOf,wkRange,fdate,normPhone,waOpen,dl,sharePdf,
   fImport,imFile,imRead,imSet,imPreview,imReview,contribView,vwk,closeWeek,
   castVote,restartVote,reopenVote,officerSign,rejectLoan,fDisburse,loanWA,fReplies,rpRead,rpApply,loanFlow,loanRecord,approvals,loanAttn,
   fPhone,savePhone,memberExtra,reportExt,RV,rvWk,rvMo,sendEach,weekText,monthText,personalText,statementText,rptPdf,build,weekData,monthData,
